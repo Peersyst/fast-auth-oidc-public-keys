@@ -1,0 +1,63 @@
+name: Update public keys
+
+on:
+  schedule:
+    # Every day at 03:00 UTC (adjust as you wish)
+    - cron: '0 3 * * *'
+  workflow_dispatch: { }
+
+jobs:
+  update-keys:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch Google public keys and inject migration cert
+        run: |
+          set -euo pipefail
+
+          CERT='-----BEGIN CERTIFICATE-----
+          MIIC3zCCAcegAwIBAgIUdVi03gO0UG02lUCzkPOqDo/S1VQwDQYJKoZIhvcNAQEL
+          BQAwGDEWMBQGA1UEAwwNZmFzdC1hdXRoLmNvbTAeFw0yNTExMTgwOTUyMDlaFw0y
+          NjExMTgwOTUyMDlaMBgxFjAUBgNVBAMMDWZhc3QtYXV0aC5jb20wggEiMA0GCSqG
+          SIb3DQEBAQUAA4IBDwAwggEKAoIBAQDoKX7+pPR4o9yT8ZEw1jL44xmyTur/uMr0
+          R2L9ONg0RLPRBDoGK1XTg7BEqmLwZGc7k4vx2yx98RoZ8M7e3PSFGHoh+CNkoU2O
+          KhQvGytjZwfmNQA8Ewz03qq2Dbv4o5L7ZX9Yt6TCITIuxzVakll7OrRewnpIYMSV
+          z/Fnzdwi/2qkrMpKBg1zAeAA49sVHAZc2ITMGntHr2y13SlZLZrzT5hZQosfjAF0
+          dO3iv+r5UVOtuiNlhHrs1SGCsMo9BieBTRVsjgTCLtyxSbvL4XjVOAEahtSsHyuX
+          H0ZtwBLssZjgSTxP38hpn6zWczdYcZUl2izLJfbovvXz37XOhIXBAgMBAAGjITAf
+          MB0GA1UdDgQWBBRMok7UALEfaSresjbfCFcJgxBvEzANBgkqhkiG9w0BAQsFAAOC
+          AQEAGJg9NF91p+iXSSAD1SoaqIagl8TBkkRzYH+L6oBD2X9bu5ksUJtNUENBi4yd
+          eYqRlAYuXX56miMjVVuzs9vhqmesyezEfURMYpejA5AhWIzt2G49K3GBggWntCBp
+          xZ2wzhUnMhUpP4DeAYG/s/c3UfYFVzTDmHO0MrcB/1HXKGFG4mRUQ2AghN+hliIj
+          cUWX/Q01znqM63sH9Zp2zaVtW0MmUmMsQi5Bf+B0YlySk0YHjwPpqQUEac1I3UKF
+          g2tClCemGFlqaugHzv4z+srZ7/xT6FLm43ImSrBTXYHdRx68zIWBTGZ2Dmae7YEo
+          R66F7vX4pQpjIdby3KLwDo+0gw==
+          -----END CERTIFICATE-----'
+  
+          # 1. Read JSON from the URL
+          curl -sS 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com' \
+          -o /tmp/original.json
+          
+          # 2. Add "migration" key at the top (jq prints it first in the object)
+          jq --arg cert "$CERT" '{migration:$cert} + .' /tmp/original.json > public-keys.json
+
+      - name: Commit and push if changed
+        run: |
+          set -euo pipefail
+          
+          if git diff --quiet public-keys.json; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          git add public-keys.json
+          git commit -m "chore: update public-keys.json from Google"
+          git push
