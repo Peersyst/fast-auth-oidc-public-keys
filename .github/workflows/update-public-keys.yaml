@@ -3,7 +3,7 @@ name: Update public keys
 on:
   schedule:
     # Every day at 03:00 UTC (adjust as you wish)
-    - cron: '0 3 * * *'
+    - cron: '0 * * * *'
   workflow_dispatch: { }
 
 jobs:
