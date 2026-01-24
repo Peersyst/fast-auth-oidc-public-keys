@@ -7,9 +7,63 @@ on:
   workflow_dispatch: { }
 
 jobs:
+  update-mainnet-keys:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch Google public keys and inject migration cert
+        run: |
+          set -euo pipefail
+
+          CERT='-----BEGIN CERTIFICATE-----
+          MIIC3zCCAcegAwIBAgIUeydu820tJNMC93wh2vCZ4SFo6s8wDQYJKoZIhvcNAQEL
+          BQAwGDEWMBQGA1UEAwwNZmFzdC1hdXRoLmNvbTAeFw0yNTEyMTYxNDMwMDJaFw0y
+          NjEyMTYxNDMwMDJaMBgxFjAUBgNVBAMMDWZhc3QtYXV0aC5jb20wggEiMA0GCSqG
+          SIb3DQEBAQUAA4IBDwAwggEKAoIBAQDENT0WvB7l4wXClOcFvPsiTmx0Y7JGh6Qi
+          Jks8NXSTXEWrpnRRL1LvZUZM72ynNk3AcM8n+IPQ0xDSZ1YpGXRVMYLV3Ru6/rrZ
+          xIxyOkFpaOYfRvbtN/vSjWJjHigAlLtg6pevBdlPC9apZCeQRSEfsOZLo1YudZqT
+          4uSeY9LpT/4ulIhxzNOAmaG5Bt8oHvsxXSv64Oy48cpdO8IOD0xFme9UXe6D2en6
+          SamR0lphuozrAbZ6WxWe9iygyU53BAkulRYlyw2dy/vRmf8/gF8MhXI9dRLLlCkl
+          Z9vktOKTQtd+mAEObbkDR0pKun8TbnT0OCCXbFKvxmzmJE4cPn+RAgMBAAGjITAf
+          MB0GA1UdDgQWBBSwIn20fY5puczKT+GtHkaJz0EZajANBgkqhkiG9w0BAQsFAAOC
+          AQEAkA/fbDBvh+zy6Xz9liWUNGeTfZ+5B9npFde0EekO0DbJ7++MjsrmS/YxAvtZ
+          fwDy/Kg1ZuVaH48tbPZZQ/ds3hsJ48icHQwXDcmxyCKA6+tGd6wja0L/8T6i5Ny/
+          MJWW3sqMPChYu+ISQJbfZMocf2ecnjDSMUBpvmYcRyiIG9tRFKZt/rEv8yjhv/Pc
+          ce7Q94OdYtRJElZe0h4aX7Jmbt+V7HI8QBUUwbtwFJteL1EMMNzIrV4irB4uIZHQ
+          tZpkZFnpGz+VqwSTVIdmEC11c0tn7J46LrpTmkdvKW6IJW0piyCQ9LZZBKGTDlSX
+          HfxWCaUo7eUhyqdcV3vo4EXjuQ==
+          -----END CERTIFICATE-----'
+
+          # 1. Read JSON from the URL
+          curl -sS 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com' \
+          -o /tmp/original.json
+
+          # 2. Add "migration" key at the top (jq prints it first in the object)
+          jq --arg cert "$CERT" '{migration:$cert} + .' /tmp/original.json > mainnet-public-keys.json
+
+      - name: Commit and push if changed
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet mainnet-public-keys.json; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add mainnet-public-keys.json
+          git commit -m "chore: update mainnet-public-keys.json from Google"
+          git push
+          sleep 5s
   update-testnet-keys:
     runs-on: ubuntu-latest
-
+    needs: [ update-mainnet-keys ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -60,60 +114,4 @@ jobs:
           
           git add public-keys.json
           git commit -m "chore: update public-keys.json from Google"
-          git push
-  update-mainnet-keys:
-    runs-on: ubuntu-latest
-    needs: [update-testnet-keys]
-    steps:
-      - name: Wait for testnet keys update
-        run: sleep 60s
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Fetch Google public keys and inject migration cert
-        run: |
-          set -euo pipefail
-
-          CERT='-----BEGIN CERTIFICATE-----
-          MIIC3zCCAcegAwIBAgIUeydu820tJNMC93wh2vCZ4SFo6s8wDQYJKoZIhvcNAQEL
-          BQAwGDEWMBQGA1UEAwwNZmFzdC1hdXRoLmNvbTAeFw0yNTEyMTYxNDMwMDJaFw0y
-          NjEyMTYxNDMwMDJaMBgxFjAUBgNVBAMMDWZhc3QtYXV0aC5jb20wggEiMA0GCSqG
-          SIb3DQEBAQUAA4IBDwAwggEKAoIBAQDENT0WvB7l4wXClOcFvPsiTmx0Y7JGh6Qi
-          Jks8NXSTXEWrpnRRL1LvZUZM72ynNk3AcM8n+IPQ0xDSZ1YpGXRVMYLV3Ru6/rrZ
-          xIxyOkFpaOYfRvbtN/vSjWJjHigAlLtg6pevBdlPC9apZCeQRSEfsOZLo1YudZqT
-          4uSeY9LpT/4ulIhxzNOAmaG5Bt8oHvsxXSv64Oy48cpdO8IOD0xFme9UXe6D2en6
-          SamR0lphuozrAbZ6WxWe9iygyU53BAkulRYlyw2dy/vRmf8/gF8MhXI9dRLLlCkl
-          Z9vktOKTQtd+mAEObbkDR0pKun8TbnT0OCCXbFKvxmzmJE4cPn+RAgMBAAGjITAf
-          MB0GA1UdDgQWBBSwIn20fY5puczKT+GtHkaJz0EZajANBgkqhkiG9w0BAQsFAAOC
-          AQEAkA/fbDBvh+zy6Xz9liWUNGeTfZ+5B9npFde0EekO0DbJ7++MjsrmS/YxAvtZ
-          fwDy/Kg1ZuVaH48tbPZZQ/ds3hsJ48icHQwXDcmxyCKA6+tGd6wja0L/8T6i5Ny/
-          MJWW3sqMPChYu+ISQJbfZMocf2ecnjDSMUBpvmYcRyiIG9tRFKZt/rEv8yjhv/Pc
-          ce7Q94OdYtRJElZe0h4aX7Jmbt+V7HI8QBUUwbtwFJteL1EMMNzIrV4irB4uIZHQ
-          tZpkZFnpGz+VqwSTVIdmEC11c0tn7J46LrpTmkdvKW6IJW0piyCQ9LZZBKGTDlSX
-          HfxWCaUo7eUhyqdcV3vo4EXjuQ==
-          -----END CERTIFICATE-----'
-  
-          # 1. Read JSON from the URL
-          curl -sS 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com' \
-          -o /tmp/original.json
-          
-          # 2. Add "migration" key at the top (jq prints it first in the object)
-          jq --arg cert "$CERT" '{migration:$cert} + .' /tmp/original.json > mainnet-public-keys.json
-
-      - name: Commit and push if changed
-        run: |
-          set -euo pipefail
-          
-          if git diff --quiet mainnet-public-keys.json; then
-            echo "No changes to commit."
-            exit 0
-          fi
-          
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          git add mainnet-public-keys.json
-          git commit -m "chore: update mainnet-public-keys.json from Google"
           git push
